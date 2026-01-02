@@ -1,0 +1,11 @@
+# Create .gitignore
+cat > .gitignore << 'EOF'
+venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+*.db
+.DS_Store
+EOF
+
