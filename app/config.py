@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 class Config:
     # API Keys
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

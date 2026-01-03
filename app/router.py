@@ -2,7 +2,8 @@
 LLM Router - handles model selection and API calls
 """
 import time
-from typing import Dict, Any
+import openai
+from typing import Dict, Any, Optional
 from app.config import config
 from app.cache import cache
 from app.analyzer import analyzer
@@ -15,6 +16,16 @@ class LLMRouter:
         self.total_cost = 0.0
         self.query_count = 0
         self.cache_hits = 0
+        
+        # Initialize OpenAI client if API key exists
+        if config.OPENAI_API_KEY:
+            try:
+                self.openai_client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+            except Exception as e:
+                print(f"OpenAI initialization failed: {e}")
+                self.openai_client = None
+        else:
+            self.openai_client = None
     
     async def route_query(self, query: str, user_id: str = "default") -> Dict[str, Any]:
         """
@@ -22,44 +33,56 @@ class LLMRouter:
         1. Check cache
         2. Analyze complexity
         3. Select model
-        4. Call LLM (or mock)
+        4. Call LLM (real or mock)
         5. Track cost
         """
         start_time = time.time()
+    
+        # Step 1: Analyze complexity FIRST (we need this for cache key)
+        analysis = analyzer.analyze(query)
+        complexity_score = analysis["complexity_score"]
         
-        # Step 1: Check cache
-        cached = cache.get(query, "any")
+        # Step 2: Select model based on complexity
+        model = config.select_model(complexity_score)
+        
+        # Step 3: Check cache with CORRECT model
+        print(f"\n[ROUTER] Query: '{query[:50]}...'")
+        print(f"[ROUTER] Complexity: {complexity_score} → Model: {model}")
+        
+        cached = cache.get(query, model)
         if cached:
             self.cache_hits += 1
+            latency = round((time.time() - start_time) * 1000, 2)
+            
             return {
                 "response": cached["text"],
                 "model": cached["model"],
                 "cost_usd": 0.0,
                 "cache_hit": True,
-                "latency_ms": round((time.time() - start_time) * 1000, 2)
+                "latency_ms": latency,
+                "routing_reason": "Cache hit - query seen before",
+                "complexity_score": complexity_score
             }
         
-        # Step 2: Analyze complexity
-        analysis = analyzer.analyze(query)
-        complexity_score = analysis["complexity_score"]
+        # Step 4: Call LLM (cache miss)
+        print(f"[ROUTER] Cache miss, calling LLM...")
         
-        # Step 3: Select model
-        model = config.select_model(complexity_score)
-        
-        # Step 4: Call LLM (or mock in dev mode)
-        if config.MOCK_MODE:
-            response_text = self._mock_llm_call(query, model)
-            input_tokens = len(query.split()) * 1.3  # Rough estimate
-            output_tokens = len(response_text.split()) * 1.3
-        else:
-            response_text, input_tokens, output_tokens = await self._real_llm_call(query, model)
+        try:
+            if config.MOCK_MODE or not self.openai_client:
+                response_text, input_tokens, output_tokens = self._mock_llm_call(query, model)
+            else:
+                response_text, input_tokens, output_tokens = await self._real_openai_call(query, model)
+        except Exception as e:
+            print(f"[ROUTER] Error: {e}")
+            response_text, input_tokens, output_tokens = self._mock_llm_call(query, model)
+            response_text = f"[FALLBACK MODE] {response_text}"
         
         # Step 5: Calculate cost
         cost = config.get_model_cost(model, int(input_tokens), int(output_tokens))
         self.total_cost += cost
         self.query_count += 1
         
-        # Cache the response
+        # Step 6: Cache the response for EXACT model
         cache.set(query, model, {
             "text": response_text,
             "model": model,
@@ -68,6 +91,14 @@ class LLMRouter:
         
         latency = round((time.time() - start_time) * 1000, 2)
         
+        # Determine routing reason
+        if complexity_score < config.SIMPLE_QUERY_THRESHOLD:
+            routing_reason = f"Simple query (score {complexity_score}) → cheap model"
+        elif complexity_score < config.COMPLEX_QUERY_THRESHOLD:
+            routing_reason = f"Medium complexity (score {complexity_score}) → balanced model"
+        else:
+            routing_reason = f"Complex query (score {complexity_score}) → powerful model"
+        
         return {
             "response": response_text,
             "model": model,
@@ -75,29 +106,75 @@ class LLMRouter:
             "cache_hit": False,
             "complexity_score": complexity_score,
             "tokens": {"input": int(input_tokens), "output": int(output_tokens)},
-            "latency_ms": latency
+            "latency_ms": latency,
+            "routing_reason": routing_reason,
+            "mode": "mock" if config.MOCK_MODE else "real",
+            "analysis_breakdown": analysis.get("breakdown", {})
         }
     
-    def _mock_llm_call(self, query: str, model: str) -> str:
-        """Mock LLM response for testing"""
-        time.sleep(0.1)  # Simulate API latency
-        return f"[MOCK {model}] This is a simulated response to: {query[:50]}..."
+    async def _real_openai_call(self, query: str, model: str) -> tuple:
+        """Real OpenAI API call"""
+        try:
+            response = self.openai_client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": "You are a helpful AI assistant. Be concise and accurate."},
+                    {"role": "user", "content": query}
+                ],
+                temperature=0.7,
+                max_tokens=500  # Limit to control costs
+            )
+            
+            response_text = response.choices[0].message.content
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
+            
+            return response_text, input_tokens, output_tokens
+            
+        except openai.AuthenticationError:
+            raise Exception("Invalid OpenAI API key")
+        except openai.RateLimitError:
+            raise Exception("OpenAI rate limit exceeded")
+        except Exception as e:
+            raise Exception(f"OpenAI API error: {str(e)}")
     
-    async def _real_llm_call(self, query: str, model: str) -> tuple:
-        """Real LLM API call (implement when you have API keys)"""
-        # TODO: Implement real OpenAI/Anthropic calls
-        return self._mock_llm_call(query, model), 100, 50
+    def _mock_llm_call(self, query: str, model: str) -> tuple:
+        """Mock LLM response for testing without API costs"""
+        time.sleep(0.1)  # Simulate API latency
+        
+        # Generate realistic-looking response based on query
+        response = f"This is a simulated response from {model}. "
+        
+        if "what" in query.lower() or "explain" in query.lower():
+            response += f"In a real scenario, I would explain: {query[:100]}... "
+        elif "how" in query.lower():
+            response += f"Here's how: {query[:100]}... "
+        else:
+            response += f"Regarding your query: {query[:100]}... "
+        
+        response += "This is MOCK mode - set MOCK_MODE=false and add OPENAI_API_KEY for real responses."
+        
+        # Estimate tokens (rough approximation)
+        input_tokens = len(query.split()) * 1.3
+        output_tokens = len(response.split()) * 1.3
+        
+        return response, input_tokens, output_tokens
     
     def get_stats(self) -> Dict[str, Any]:
         """Get router statistics"""
+        cache_rate = round(self.cache_hits / max(self.query_count, 1) * 100, 1)
+        avg_cost = round(self.total_cost / max(self.query_count, 1), 4)
+        
         return {
             "total_queries": self.query_count,
-            "total_cost_usd": round(self.total_cost, 2),
+            "total_cost_usd": round(self.total_cost, 4),
             "cache_hits": self.cache_hits,
-            "cache_hit_rate": round(self.cache_hits / max(self.query_count, 1) * 100, 1),
-            "avg_cost_per_query": round(self.total_cost / max(self.query_count, 1), 4)
+            "cache_hit_rate": cache_rate,
+            "avg_cost_per_query": avg_cost,
+            "estimated_savings_usd": round(self.cache_hits * avg_cost, 2),
+            "mode": "mock" if config.MOCK_MODE else "real"
         }
 
 
-# Global router
+# Global router instance
 router = LLMRouter()
