@@ -58,7 +58,75 @@ LLM Cost Firewall sits between your app and LLM providers, automatically:
 **Result: ~60% cost reduction with the same output quality.**
 
 ---
+## 🔬 Technical Deep Dive
 
+Want to understand how this works under the hood?
+
+**[→ Read the Technical Documentation](TECHNICAL.md)**
+
+Covers:
+- Intelligent routing algorithm (why heuristics over ML)
+- Semantic caching system (how embeddings work)
+- Performance characteristics (latency breakdown)
+- Design decisions and trade-offs
+- Scalability considerations
+
+---
+
+✅ COMMIT THIS
+bash# Create the TECHNICAL.md file
+# (Copy the artifact content above into TECHNICAL.md)
+
+git add TECHNICAL.md README.md
+git commit -m "Docs: Add comprehensive technical deep-dive
+
+NEW: TECHNICAL.md (4000+ words)
+- Complete architecture explanation
+- Algorithm details with time complexity
+- Design decisions and trade-offs
+- Performance benchmarks
+- Interview talking points
+
+This makes the project interview-ready.
+Interviewers can see I understand internals deeply.
+
+Updated README with link to technical docs."
+
+git push origin main
+
+🎯 WHY THIS WORKS
+For Recruiters (README):
+
+Quick overview
+Visual results
+Easy to understand value prop
+Decision: "Schedule interview"
+
+For Engineers (TECHNICAL.md):
+
+Deep technical details
+Proves you understand tradeoffs
+Shows systems thinking
+Decision: "This person knows their stuff"
+
+Interview advantage:
+
+They can read TECHNICAL.md before interviewing you
+You can reference specific sections during interview
+Shows proactive documentation skills
+
+
+⏰ TIME CHECK
+This takes 10 minutes to create the file.
+After this:
+
+Continue with semantic caching implementation (remaining 80 min from 5:00-6:30 PM plan)
+
+You're building something impressive. The technical documentation makes it interview-proof.
+
+Create TECHNICAL.md now, commit it, then continue with semantic caching.
+Reply with: "✅ TECHNICAL.md created - continuing with semantic cache"
+Let's GO! 🔥Claude is AI and can make mistakes. Please double-check responses.You've used 90% o
 ## 📖 Usage
 
 ### Send a Query
