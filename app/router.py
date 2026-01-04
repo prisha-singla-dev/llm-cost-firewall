@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 from app.config import config
 from app.cache import cache
 from app.analyzer import analyzer
+from app.semantic_cache import semantic_cache
 
 
 class LLMRouter:
@@ -64,6 +65,21 @@ class LLMRouter:
                 "complexity_score": complexity_score
             }
         
+        # Step 3: Check SEMANTIC cache (NEW!)
+        semantic_cached = semantic_cache.get(query, model)
+        if semantic_cached:
+            self.cache_hits += 1
+            return {
+                "response": semantic_cached["text"],
+                "model": semantic_cached["model"],
+                "cost_usd": 0.0,
+                "cache_hit": True,
+                "cache_type": "semantic",
+                "similarity_score": semantic_cached.get("similarity_score", 0),
+                "matched_query": semantic_cached.get("matched_query", ""),
+                "latency_ms": round((time.time() - start_time) * 1000, 2)
+            }   
+
         # Step 4: Call LLM (cache miss)
         print(f"[ROUTER] Cache miss, calling LLM...")
         
@@ -84,6 +100,12 @@ class LLMRouter:
         
         # Step 6: Cache the response for EXACT model
         cache.set(query, model, {
+            "text": response_text,
+            "model": model,
+            "tokens": {"input": input_tokens, "output": output_tokens}
+        })
+
+        semantic_cache.set(query, model, {
             "text": response_text,
             "model": model,
             "tokens": {"input": input_tokens, "output": output_tokens}
