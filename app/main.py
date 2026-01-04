@@ -7,6 +7,8 @@ from typing import Optional
 from app.router import router
 from app.cache import cache
 from app.logger import request_logger
+from app.analytics import analytics
+from fastapi.responses import FileResponse
 
 app = FastAPI(
     title="LLM Cost Firewall",
@@ -14,11 +16,9 @@ app = FastAPI(
     version="0.1.0"
 )
 
-
 class QueryRequest(BaseModel):
     query: str
     user_id: Optional[str] = "default"
-
 
 @app.get("/")
 async def root():
@@ -34,7 +34,7 @@ async def root():
 async def chat(request: QueryRequest):
     """
     Main endpoint: Send query, get optimized response
-    
+    + Analytics
     Example:
     POST /chat
     {
@@ -44,6 +44,7 @@ async def chat(request: QueryRequest):
     """
     result = await router.route_query(request.query, request.user_id)
     request_logger.log(request.query, result)
+    analytics.log_request(request.query, result, request.user_id)
     return result
 
 
@@ -63,6 +64,27 @@ async def get_stats():
         }
     }
 
+@app.get("/analytics")
+async def get_analytics():
+    """Get comprehensive analytics"""
+    return analytics.get_analytics()
+
+@app.get("/history")
+async def get_history(limit: int = 20):
+    """Get recent request history"""
+    return {
+        "recent_requests": analytics.get_recent(limit)
+    }
+
+@app.get("/export/csv")
+async def export_csv():
+    """Download full request log as CSV"""
+    csv_path = analytics.export_csv()
+    return FileResponse(
+        csv_path,
+        media_type="text/csv",
+        filename="cost_firewall_requests.csv"
+    )
 
 @app.post("/cache/clear")
 async def clear_cache():
