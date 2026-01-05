@@ -1,14 +1,17 @@
 """
 FastAPI server for LLM Cost Firewall
 """
-from fastapi import FastAPI
+import time
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+from collections import defaultdict
+from fastapi.responses import FileResponse
 from app.router import router
 from app.cache import cache
 from app.logger import request_logger
 from app.analytics import analytics
-from fastapi.responses import FileResponse
+
 
 app = FastAPI(
     title="LLM Cost Firewall",
@@ -20,6 +23,30 @@ class QueryRequest(BaseModel):
     query: str
     user_id: Optional[str] = "default"
 
+# Rate limiter
+request_counts = defaultdict(list)
+RATE_LIMIT_HOURLY = 100
+
+def check_rate_limit(user_id: str):
+    """Check if user has exceeded rate limit"""
+    now = time.time()
+    hour_ago = now - 3600
+    
+    # Clean old requests
+    request_counts[user_id] = [
+        t for t in request_counts[user_id] if t > hour_ago
+    ]
+    
+    # Check limit
+    if len(request_counts[user_id]) >= RATE_LIMIT_HOURLY:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded. Max {RATE_LIMIT_HOURLY} requests/hour."
+        )
+    
+    # Record this request
+    request_counts[user_id].append(now)
+
 @app.get("/")
 async def root():
     """Health check endpoint"""
@@ -28,7 +55,6 @@ async def root():
         "message": "LLM Cost Firewall is active",
         "docs": "/docs"
     }
-
 
 @app.post("/chat")
 async def chat(request: QueryRequest):
@@ -42,11 +68,29 @@ async def chat(request: QueryRequest):
         "user_id": "user_123"
     }
     """
+    check_rate_limit(request.user_id)
     result = await router.route_query(request.query, request.user_id)
     request_logger.log(request.query, result)
     analytics.log_request(request.query, result, request.user_id)
     return result
 
+@app.get("/rate-limit/{user_id}")
+async def get_rate_limit_status(user_id: str):
+    """Check user's current rate limit status"""
+    now = time.time()
+    hour_ago = now - 3600
+    
+    recent_requests = [
+        t for t in request_counts.get(user_id, []) if t > hour_ago
+    ]
+    
+    return {
+        "user_id": user_id,
+        "requests_this_hour": len(recent_requests),
+        "limit": RATE_LIMIT_HOURLY,
+        "remaining": RATE_LIMIT_HOURLY - len(recent_requests),
+        "reset_in_seconds": int(3600 - (now - min(recent_requests, default=now)))
+    }
 
 @app.get("/stats")
 async def get_stats():
@@ -92,7 +136,6 @@ async def clear_cache():
     cache.clear()
     return {"message": "Cache cleared successfully"}
 
-
 @app.post("/compare")
 async def compare_models(request: QueryRequest):
     """
@@ -132,7 +175,6 @@ async def compare_models(request: QueryRequest):
         )
     }
 
-
 @app.get("/test/routing")
 async def test_routing():
     """Test routing with sample queries"""
@@ -157,7 +199,6 @@ async def test_routing():
         })
     
     return {"test_results": results}
-
 
 @app.get("/test/cache")
 async def test_cache():
