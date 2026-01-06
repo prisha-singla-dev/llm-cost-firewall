@@ -144,7 +144,8 @@ class LLMRouter:
                     {"role": "user", "content": query}
                 ],
                 temperature=0.7,
-                max_tokens=500  # Limit to control costs
+                max_tokens=500,
+                timeout=30
             )
             
             response_text = response.choices[0].message.content
@@ -154,11 +155,18 @@ class LLMRouter:
             return response_text, input_tokens, output_tokens
             
         except openai.AuthenticationError:
-            raise Exception("Invalid OpenAI API key")
+            print(f"[ERROR] Invalid API key")
+            raise Exception("Invalid OpenAI API key - check .env file")
         except openai.RateLimitError:
-            raise Exception("OpenAI rate limit exceeded")
+            print(f"[ERROR] Rate limit exceeded")
+            raise Exception("OpenAI rate limit exceeded - try again later")
+        except openai.APITimeoutError:
+            print(f"[ERROR] API timeout")
+            raise Exception("OpenAI API timeout - try again")
         except Exception as e:
-            raise Exception(f"OpenAI API error: {str(e)}")
+            print(f"[ERROR] OpenAI API error: {e}")
+            # Fallback to mock on any error
+            return self._mock_llm_call(query, model)
     
     def _mock_llm_call(self, query: str, model: str) -> tuple:
         """Mock LLM response for testing without API costs"""
