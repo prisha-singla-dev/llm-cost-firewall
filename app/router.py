@@ -49,18 +49,17 @@ class LLMRouter:
         
         # Step 2: Select model based on complexity
         # Try ML router first, fallback to heuristic
-        # try:
-        #     model, confidence = ml_router.predict_model(query)
-        #     print(f"[ROUTER] ML predicted: {model} (confidence: {confidence:.2f})")
-        # except Exception as e:
-        #     # Fallback to heuristic if ML fails
-        #     model = config.select_model(complexity_score)
-        #     confidence = 0.0
-        #     print(f"[ROUTER] ML routing failed, using heuristic: {model}")
+        try:
+            model, confidence = ml_router.predict_model(query)
+            print(f"[ROUTER] ML predicted: {model} (confidence: {confidence:.2f})")
+        except Exception as e:
+            model = config.select_model(complexity_score)
+            confidence = 0.0
+            print(f"[ROUTER] ML fallback: {model}")
 
-        model = config.select_model(complexity_score)
-        confidence = 0.0
-        print(f"[ROUTER] Heuristic routing: {model}")
+        # model = config.select_model(complexity_score)
+        # confidence = 0.0
+        # print(f"[ROUTER] Heuristic routing: {model}")
 
         # Step 3: Check cache with CORRECT model
         print(f"\n[ROUTER] Query: '{query[:50]}...'")
