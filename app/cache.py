@@ -19,7 +19,7 @@ class SimpleCache:
         # Normalize: lowercase + strip whitespace
         normalized_query = query.lower().strip()
         content = f"{normalized_query}:{model}"
-        key = hashlib.sha256(content.encode()).hexdigest()[:16]  # Shorter hash for readability
+        key = hashlib.sha256(content.encode()).hexdigest()[:16]
         return key
     
     def get(self, query: str, model: str) -> Optional[Dict[str, Any]]:

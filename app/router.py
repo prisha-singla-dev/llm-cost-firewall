@@ -1,13 +1,15 @@
 """
 LLM Router - handles model selection and API calls
+UPDATED FOR GEMINI API
 """
 import time
-import openai
+import google.generativeai as genai
 from typing import Dict, Any, Optional
 from app.config import config
 from app.cache import cache
 from app.analyzer import analyzer
 from app.semantic_cache import semantic_cache
+from app.ml_router import ml_router
 
 
 class LLMRouter:
@@ -18,15 +20,17 @@ class LLMRouter:
         self.query_count = 0
         self.cache_hits = 0
         
-        # Initialize OpenAI client if API key exists
-        if config.OPENAI_API_KEY:
+        if config.GEMINI_API_KEY:
             try:
-                self.openai_client = openai.OpenAI(api_key=config.OPENAI_API_KEY)
+                genai.configure(api_key=config.GEMINI_API_KEY)
+                self.gemini_configured = True
+                print("[ROUTER] Gemini API configured successfully ✅")
             except Exception as e:
-                print(f"OpenAI initialization failed: {e}")
-                self.openai_client = None
+                print(f"[ROUTER] Gemini initialization failed: {e}")
+                self.gemini_configured = False
         else:
-            self.openai_client = None
+            self.gemini_configured = False
+            print("[ROUTER] No GEMINI_API_KEY found - running in MOCK mode")
     
     async def route_query(self, query: str, user_id: str = "default") -> Dict[str, Any]:
         """
@@ -44,8 +48,20 @@ class LLMRouter:
         complexity_score = analysis["complexity_score"]
         
         # Step 2: Select model based on complexity
+        # Try ML router first, fallback to heuristic
+        # try:
+        #     model, confidence = ml_router.predict_model(query)
+        #     print(f"[ROUTER] ML predicted: {model} (confidence: {confidence:.2f})")
+        # except Exception as e:
+        #     # Fallback to heuristic if ML fails
+        #     model = config.select_model(complexity_score)
+        #     confidence = 0.0
+        #     print(f"[ROUTER] ML routing failed, using heuristic: {model}")
+
         model = config.select_model(complexity_score)
-        
+        confidence = 0.0
+        print(f"[ROUTER] Heuristic routing: {model}")
+
         # Step 3: Check cache with CORRECT model
         print(f"\n[ROUTER] Query: '{query[:50]}...'")
         print(f"[ROUTER] Complexity: {complexity_score} → Model: {model}")
@@ -65,7 +81,7 @@ class LLMRouter:
                 "complexity_score": complexity_score
             }
         
-        # Step 3: Check SEMANTIC cache (NEW!)
+        # Step 3b: Check SEMANTIC cache
         semantic_cached = semantic_cache.get(query, model)
         if semantic_cached:
             self.cache_hits += 1
@@ -84,10 +100,10 @@ class LLMRouter:
         print(f"[ROUTER] Cache miss, calling LLM...")
         
         try:
-            if config.MOCK_MODE or not self.openai_client:
+            if config.MOCK_MODE or not self.gemini_configured:
                 response_text, input_tokens, output_tokens = self._mock_llm_call(query, model)
             else:
-                response_text, input_tokens, output_tokens = await self._real_openai_call(query, model)
+                response_text, input_tokens, output_tokens = self._real_gemini_call(query, model)
         except Exception as e:
             print(f"[ROUTER] Error: {e}")
             response_text, input_tokens, output_tokens = self._mock_llm_call(query, model)
@@ -131,48 +147,45 @@ class LLMRouter:
             "latency_ms": latency,
             "routing_reason": routing_reason,
             "mode": "mock" if config.MOCK_MODE else "real",
-            "analysis_breakdown": analysis.get("breakdown", {})
+            "analysis_breakdown": analysis.get("breakdown", {}),
+            "routing_method": "ml" if ml_router.model is not None else "heuristic",
+            "routing_confidence": round(confidence, 2)
         }
     
-    async def _real_openai_call(self, query: str, model: str) -> tuple:
-        """Real OpenAI API call"""
+    def _real_gemini_call(self, query: str, model: str) -> tuple:
+        """
+        Real Gemini API call
+        CHANGED: Completely new method for Gemini
+        """
         try:
-            response = self.openai_client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": "You are a helpful AI assistant. Be concise and accurate."},
-                    {"role": "user", "content": query}
-                ],
-                temperature=0.7,
-                max_tokens=500,
-                timeout=30
-            )
+            gemini_model = genai.GenerativeModel(model)
+            response = gemini_model.generate_content(query)
+            response_text = response.text
+
+            # Use rough estimation: ~1.3 tokens per word
+            input_tokens = len(query.split()) * 1.3
+            output_tokens = len(response_text.split()) * 1.3
             
-            response_text = response.choices[0].message.content
-            input_tokens = response.usage.prompt_tokens
-            output_tokens = response.usage.completion_tokens
+            print(f"[ROUTER] ✅ Gemini {model} responded successfully")
             
-            return response_text, input_tokens, output_tokens
+            return response_text, int(input_tokens), int(output_tokens)
             
-        except openai.AuthenticationError:
-            print(f"[ERROR] Invalid API key")
-            raise Exception("Invalid OpenAI API key - check .env file")
-        except openai.RateLimitError:
-            print(f"[ERROR] Rate limit exceeded")
-            raise Exception("OpenAI rate limit exceeded - try again later")
-        except openai.APITimeoutError:
-            print(f"[ERROR] API timeout")
-            raise Exception("OpenAI API timeout - try again")
         except Exception as e:
-            print(f"[ERROR] OpenAI API error: {e}")
-            # Fallback to mock on any error
-            return self._mock_llm_call(query, model)
+            error_msg = str(e)
+            print(f"[ERROR] Gemini API error: {error_msg}")
+            
+            if "API_KEY_INVALID" in error_msg or "invalid api key" in error_msg.lower():
+                raise Exception("Invalid Gemini API key - get one at https://aistudio.google.com/app/apikey")
+            elif "quota" in error_msg.lower() or "rate" in error_msg.lower():
+                raise Exception("Gemini rate limit exceeded - wait 1 minute (15 req/min limit)")
+            else:
+                raise Exception(f"Gemini API error: {error_msg}")
     
+   
     def _mock_llm_call(self, query: str, model: str) -> tuple:
         """Mock LLM response for testing without API costs"""
         time.sleep(0.1)  # Simulate API latency
         
-        # Generate realistic-looking response based on query
         response = f"This is a simulated response from {model}. "
         
         if "what" in query.lower() or "explain" in query.lower():
@@ -182,7 +195,7 @@ class LLMRouter:
         else:
             response += f"Regarding your query: {query[:100]}... "
         
-        response += "This is MOCK mode - set MOCK_MODE=false and add OPENAI_API_KEY for real responses."
+        response += "This is MOCK mode - set GEMINI_API_KEY environment variable for real responses."
         
         # Estimate tokens (rough approximation)
         input_tokens = len(query.split()) * 1.3
