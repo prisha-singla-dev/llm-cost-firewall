@@ -1,5 +1,6 @@
 """
 Simple CSV logger for tracking all requests
+FIXED: Now logs actual query text for ML training
 """
 import csv
 from datetime import datetime
@@ -17,7 +18,7 @@ class RequestLogger:
             with open(self.log_file, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerow([
-                    "timestamp", "query_length", "model", "complexity_score",
+                    "timestamp", "query", "model", "complexity_score",  
                     "cost_usd", "latency_ms", "cache_hit", "input_tokens", "output_tokens"
                 ])
     
@@ -28,7 +29,7 @@ class RequestLogger:
                 writer = csv.writer(f)
                 writer.writerow([
                     datetime.utcnow().isoformat(),
-                    len(query),
+                    query[:200],  
                     result.get("model", "unknown"),
                     result.get("complexity_score", 0),
                     result.get("cost_usd", 0),

@@ -11,6 +11,7 @@ from app.router import router
 from app.cache import cache
 from app.logger import request_logger
 from app.analytics import analytics
+from app.ml_router import ml_router
 
 
 app = FastAPI(
@@ -150,7 +151,7 @@ async def compare_models(request: QueryRequest):
     
     # Estimate cost for different models
     input_tokens = len(request.query.split()) * 1.3
-    output_tokens = 100  # Assume 100 token response
+    output_tokens = 100
     
     comparisons = []
     for model in ["gpt-3.5-turbo", "gpt-4", "claude-haiku-3", "claude-opus-3"]:
@@ -174,6 +175,32 @@ async def compare_models(request: QueryRequest):
             6
         )
     }
+
+@app.post("/train-ml-router")
+async def train_ml_router(min_samples: int = 20):
+    """
+    Train ML routing model from request logs
+    Requires at least 50 logged requests
+    """
+    success = ml_router.train_from_logs(min_samples)
+    
+    if success:
+        return {
+            "status": "trained",
+            "message": "ML routing model trained successfully",
+            "stats": ml_router.get_stats()
+        }
+    else:
+        return {
+            "status": "skipped",
+            "message": f"Need at least {min_samples} requests to train",
+            "current_logs": "Check logs/requests.csv"
+        }
+
+@app.get("/ml-router/stats")
+async def get_ml_router_stats():
+    """Get ML router statistics"""
+    return ml_router.get_stats()
 
 @app.get("/test/routing")
 async def test_routing():
@@ -205,14 +232,11 @@ async def test_cache():
     """Test cache functionality"""
     from app.cache import cache
     
-    # Clear cache first
     cache.clear()
     
-    # Test set and get
     test_query = "What is AI?"
     cache.set(test_query, "gpt-4", {"text": "AI is...", "model": "gpt-4"})
     
-    # Try to get it back
     result = cache.get(test_query, "gpt-4")
     
     return {

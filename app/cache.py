@@ -55,7 +55,7 @@ class SimpleCache:
             "query_preview": query[:50]  # For debugging
         }
         
-        print(f"[CACHE] ✅ SET - Key: {key}, Total cached: {len(self.cache)}")
+        print(f"[CACHE] SET - Key: {key}, Total cached: {len(self.cache)}")
     
     def get_stats(self) -> Dict[str, int]:
         """Get cache statistics"""
