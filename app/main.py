@@ -12,12 +12,21 @@ from app.cache import cache
 from app.logger import request_logger
 from app.analytics import analytics
 from app.ml_router import ml_router
+from fastapi.middleware.cors import CORSMiddleware
 
 
 app = FastAPI(
     title="LLM Cost Firewall",
     description="Intelligent proxy that cuts LLM costs by 60%",
     version="0.1.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # React dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class QueryRequest(BaseModel):
