@@ -331,6 +331,7 @@ MIT License - free to use and modify
 - Email: [prishasingla23@gmail.com](mailto:prishasingla23@gmail.com)
 
 Built with ❤️ to solve real production cost problems at scale.
+You are welcome.
 
 ---
 
