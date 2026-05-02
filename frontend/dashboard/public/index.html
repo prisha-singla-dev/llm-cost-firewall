@@ -1,43 +1,876 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="Web site created using create-react-app"
-    />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <!--
-      manifest.json provides metadata used when your web app is installed on a
-      user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
-    -->
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
-      Notice the use of %PUBLIC_URL% in the tags above.
-      It will be replaced with the URL of the `public` folder during the build.
-      Only files inside the `public` folder can be referenced from the HTML.
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>LLM Cost Firewall — Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════════
+   DESIGN TOKENS
+═══════════════════════════════════════════════════════ */
+:root {
+  --bg:        #0d1117;
+  --surface:   #161b22;
+  --surface2:  #21262d;
+  --surface3:  #2d333b;
+  --border:    #30363d;
+  --border2:   #444c56;
+  --blue:      #58a6ff;
+  --green:     #3fb950;
+  --yellow:    #d29922;
+  --orange:    #f0883e;
+  --red:       #f85149;
+  --purple:    #bc8cff;
+  --teal:      #39d353;
+  --text:      #e6edf3;
+  --muted:     #8b949e;
+  --muted2:    #6e7681;
+  --r:         8px;
+  --r-lg:      12px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;min-height:100vh;font-size:14px;line-height:1.5}
 
-      Unlike "/favicon.ico" or "favicon.ico", "%PUBLIC_URL%/favicon.ico" will
-      work correctly both with client-side routing and a non-root public URL.
-      Learn how to configure a non-root public URL by running `npm run build`.
-    -->
-    <title>React App</title>
-  </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-    <!--
-      This HTML file is a template.
-      If you open it directly in the browser, you will see an empty page.
+/* ═══════════════════════════════════════════════════════
+   TOPBAR
+═══════════════════════════════════════════════════════ */
+.topbar{
+  position:sticky;top:0;z-index:100;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:0 24px;height:56px;
+  display:flex;align-items:center;justify-content:space-between;
+  backdrop-filter:blur(8px);
+}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.logo-icon{font-size:20px}
+.logo-sub{color:var(--muted);font-weight:400;font-size:13px;margin-left:4px}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.pill{
+  display:flex;align-items:center;gap:6px;
+  background:var(--surface2);border:1px solid var(--border);
+  border-radius:20px;padding:4px 12px;font-size:12px;font-weight:500;
+}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);flex-shrink:0}
+.live-dot.pulse{animation:pulse 2s ease-in-out infinite}
+.live-dot.red{background:var(--red);animation:none}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.8)}}
+.tag{background:var(--blue);color:#0d1117;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700}
+.mock-banner{
+  background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.4);
+  border-radius:6px;padding:4px 12px;font-size:12px;color:var(--yellow);font-weight:600;
+  display:flex;align-items:center;gap:6px;
+}
 
-      You can add webfonts, meta tags, or analytics to this file.
-      The build step will place the bundled scripts into the <body> tag.
+/* ═══════════════════════════════════════════════════════
+   LAYOUT
+═══════════════════════════════════════════════════════ */
+.main{padding:20px 24px;max-width:1400px;margin:0 auto}
+.section{margin-bottom:20px}
+.section-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:12px;
+}
+.section-title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.g3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:12px}
+.g21{display:grid;grid-template-columns:2fr 1fr;gap:12px}
 
-      To begin the development, run `npm start` or `yarn start`.
-      To create a production bundle, use `npm run build` or `yarn build`.
-    -->
-  </body>
+/* ═══════════════════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════════════════ */
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-lg);padding:16px;
+}
+.card:hover{border-color:var(--border2);transition:border-color .2s}
+
+/* ═══════════════════════════════════════════════════════
+   KPI CARDS
+═══════════════════════════════════════════════════════ */
+.kpi-card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-lg);padding:16px 18px;
+  display:flex;flex-direction:column;gap:4px;
+  position:relative;overflow:hidden;transition:border-color .2s;
+}
+.kpi-card:hover{border-color:var(--border2)}
+.kpi-card::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  border-radius:var(--r-lg) var(--r-lg) 0 0;
+}
+.kpi-card.blue::before{background:var(--blue)}
+.kpi-card.green::before{background:var(--green)}
+.kpi-card.purple::before{background:var(--purple)}
+.kpi-card.yellow::before{background:var(--yellow)}
+.kpi-card.orange::before{background:var(--orange)}
+.kpi-icon{font-size:18px;margin-bottom:4px}
+.kpi-label{font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.kpi-value{font-size:26px;font-weight:700;line-height:1.1;margin:2px 0}
+.kpi-sub{font-size:12px;color:var(--muted)}
+.kpi-delta{font-size:11px;font-weight:600}
+.kpi-delta.up{color:var(--green)}
+.kpi-delta.down{color:var(--red)}
+.col-blue{color:var(--blue)}
+.col-green{color:var(--green)}
+.col-purple{color:var(--purple)}
+.col-yellow{color:var(--yellow)}
+.col-orange{color:var(--orange)}
+.col-red{color:var(--red)}
+
+/* ═══════════════════════════════════════════════════════
+   BUDGET BARS
+═══════════════════════════════════════════════════════ */
+.budget-label-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.budget-title{font-size:13px;font-weight:500}
+.budget-amount{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.bar-track{background:var(--surface3);border-radius:4px;height:6px;overflow:hidden;margin-bottom:14px}
+.bar-fill{height:100%;border-radius:4px;transition:width .6s cubic-bezier(.4,0,.2,1),background .4s}
+.bar-fill.ok{background:var(--green)}
+.bar-fill.warn{background:var(--yellow)}
+.bar-fill.danger{background:var(--red)}
+.budget-pct{font-size:11px;font-weight:700;margin-top:-10px;margin-bottom:14px;color:var(--muted)}
+
+/* ═══════════════════════════════════════════════════════
+   QUERY PANEL
+═══════════════════════════════════════════════════════ */
+.query-panel{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-lg);padding:20px;margin-bottom:20px;
+}
+.panel-title{font-size:14px;font-weight:600;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.example-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.btn-example{
+  background:var(--surface2);border:1px solid var(--border);color:var(--muted);
+  border-radius:6px;padding:4px 10px;font-size:12px;font-weight:500;cursor:pointer;
+  transition:all .15s;
+}
+.btn-example:hover{border-color:var(--blue);color:var(--blue);background:rgba(88,166,255,.08)}
+.query-area{
+  width:100%;background:var(--surface2);border:1px solid var(--border);
+  color:var(--text);border-radius:var(--r);padding:10px 14px;
+  font-size:14px;font-family:inherit;resize:vertical;min-height:72px;
+  transition:border-color .15s;
+}
+.query-area:focus{outline:none;border-color:var(--blue)}
+.query-controls{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.inp{
+  background:var(--surface2);border:1px solid var(--border);color:var(--text);
+  padding:7px 12px;border-radius:var(--r);font-size:13px;transition:border-color .15s;
+}
+.inp:focus{outline:none;border-color:var(--blue)}
+select.inp{cursor:pointer}
+.btn{
+  background:var(--blue);color:#0d1117;border:none;
+  padding:8px 18px;border-radius:var(--r);font-size:13px;font-weight:700;
+  cursor:pointer;transition:opacity .15s,transform .1s;white-space:nowrap;
+}
+.btn:hover{opacity:.88}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text);font-weight:500}
+.btn-outline:hover{border-color:var(--blue);color:var(--blue);opacity:1}
+.btn-sm{padding:5px 12px;font-size:12px}
+.btn-danger{background:rgba(248,81,73,.15);border:1px solid rgba(248,81,73,.4);color:var(--red);font-weight:600}
+.btn-danger:hover{background:rgba(248,81,73,.25);opacity:1}
+.spinner-txt{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:6px}
+.spin{display:inline-block;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ═══════════════════════════════════════════════════════
+   RESPONSE BOX
+═══════════════════════════════════════════════════════ */
+.response-wrap{margin-top:14px;display:none}
+.response-header{
+  display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:8px;font-size:12px;color:var(--muted);
+}
+.response-body{
+  background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);
+  padding:14px 16px;font-size:14px;line-height:1.7;white-space:pre-wrap;
+  max-height:320px;overflow-y:auto;
+}
+.chip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{
+  border:1px solid var(--border);border-radius:20px;
+  padding:3px 10px;font-size:11px;font-weight:600;color:var(--muted);
+}
+.chip.blue  {border-color:rgba(88,166,255,.5);color:var(--blue)}
+.chip.green {border-color:rgba(63,185,80,.5);color:var(--green)}
+.chip.purple{border-color:rgba(188,140,255,.5);color:var(--purple)}
+.chip.yellow{border-color:rgba(210,153,34,.5);color:var(--yellow)}
+.chip.orange{border-color:rgba(240,136,62,.5);color:var(--orange)}
+.chip.red   {border-color:rgba(248,81,73,.5);color:var(--red)}
+.error-banner{
+  margin-top:10px;padding:10px 14px;
+  background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);
+  border-radius:var(--r);color:var(--red);font-size:13px;display:none;
+}
+.predict-box{
+  background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);
+  padding:10px 14px;font-size:12px;color:var(--muted);margin-top:8px;display:none;
+  display:flex;gap:16px;flex-wrap:wrap;
+}
+.predict-item{display:flex;flex-direction:column;gap:2px}
+.predict-val{font-size:14px;font-weight:700;color:var(--text)}
+
+/* ═══════════════════════════════════════════════════════
+   CHARTS
+═══════════════════════════════════════════════════════ */
+.chart-wrap{position:relative;height:180px}
+.chart-title{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px}
+
+/* ═══════════════════════════════════════════════════════
+   TABLE
+═══════════════════════════════════════════════════════ */
+.table-wrap{overflow-x:auto;border-radius:var(--r)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{
+  text-align:left;color:var(--muted);font-size:11px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.06em;
+  padding:8px 12px;border-bottom:1px solid var(--border);white-space:nowrap;
+}
+td{padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;max-width:200px}
+td.wrap{white-space:normal;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.empty{color:var(--muted);text-align:center;padding:28px 12px;font-style:italic}
+.mono{font-family:'SF Mono','Fira Code',monospace;font-size:12px}
+
+/* ═══════════════════════════════════════════════════════
+   MISC
+═══════════════════════════════════════════════════════ */
+.config-bar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.config-bar label{font-size:12px;color:var(--muted);font-weight:500}
+.config-bar input{width:220px}
+.refresh-info{margin-left:auto;font-size:11px;color:var(--muted2)}
+
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.stat-row:last-child{border-bottom:none}
+.stat-key{font-size:12px;color:var(--muted)}
+.stat-val{font-size:13px;font-weight:600}
+
+.mini-stat{text-align:center;padding:12px 8px}
+.mini-val{font-size:22px;font-weight:700}
+.mini-lbl{font-size:11px;color:var(--muted);margin-top:2px}
+
+@media(max-width:1000px){.g4{grid-template-columns:repeat(2,1fr)}.g3,.g21{grid-template-columns:1fr}}
+@media(max-width:640px){.g4,.g2{grid-template-columns:1fr}.main{padding:14px 16px}}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════
+  TOPBAR
+════════════════════════════════════════════ -->
+<header class="topbar">
+  <div class="logo">
+    <span class="logo-icon">🔥</span>
+    LLM Cost Firewall
+    <span class="logo-sub">/ dashboard</span>
+  </div>
+  <div class="topbar-right">
+    <div id="mockBanner" class="mock-banner" style="display:none">⚠ MOCK MODE</div>
+    <div class="pill">
+      <div class="live-dot" id="liveDot"></div>
+      <span id="liveStatus">connecting...</span>
+    </div>
+    <span class="tag">v2.0</span>
+  </div>
+</header>
+
+<div class="main">
+
+<!-- ════════════════════════════════════════════
+  CONFIG BAR
+════════════════════════════════════════════ -->
+<div class="config-bar">
+  <label>API Base:</label>
+  <input class="inp" id="apiBase" value="http://localhost:8000" placeholder="http://localhost:8000"/>
+  <button class="btn btn-outline btn-sm" onclick="doRefresh()">↺ Refresh</button>
+  <button class="btn btn-outline btn-sm" onclick="window.open(api()+'/export/csv','_blank')">⬇ Export CSV</button>
+  <button class="btn btn-outline btn-sm" onclick="clearCaches()">🗑 Clear Cache</button>
+  <button class="btn btn-outline btn-sm" onclick="window.open(api()+'/docs','_blank')">📖 API Docs</button>
+  <span class="refresh-info" id="refreshInfo">—</span>
+</div>
+
+<!-- ════════════════════════════════════════════
+  KPI ROW
+════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header"><span class="section-title">Live Metrics</span></div>
+  <div class="g4">
+
+    <div class="kpi-card blue">
+      <div class="kpi-icon">💸</div>
+      <div class="kpi-label">Total Cost</div>
+      <div class="kpi-value col-blue" id="kpiCost">—</div>
+      <div class="kpi-sub" id="kpiAvg">avg / request: —</div>
+    </div>
+
+    <div class="kpi-card green">
+      <div class="kpi-icon">⚡</div>
+      <div class="kpi-label">Cache Hit Rate</div>
+      <div class="kpi-value col-green" id="kpiHit">—</div>
+      <div class="kpi-sub" id="kpiSaved">money saved: —</div>
+    </div>
+
+    <div class="kpi-card purple">
+      <div class="kpi-icon">📨</div>
+      <div class="kpi-label">Total Requests</div>
+      <div class="kpi-value col-purple" id="kpiReqs">—</div>
+      <div class="kpi-sub" id="kpiP95">p95 latency: —</div>
+    </div>
+
+    <div class="kpi-card yellow">
+      <div class="kpi-icon">🛡</div>
+      <div class="kpi-label">Budget (Daily)</div>
+      <div class="kpi-value col-yellow" id="kpiBudget">—</div>
+      <div class="kpi-sub" id="kpiBudgetSub">of $— limit</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+  BUDGET + CACHE STATS
+════════════════════════════════════════════ -->
+<div class="g21 section">
+  <!-- Budget bars -->
+  <div class="card">
+    <div class="chart-title">Budget Status</div>
+    <div>
+      <div class="budget-label-row">
+        <span class="budget-title">Daily Budget</span>
+        <span class="budget-amount" id="dailyAmt">—</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill ok" id="dailyBar" style="width:0%"></div></div>
+      <div class="budget-label-row" style="margin-top:-6px">
+        <span class="budget-title">Hourly Budget</span>
+        <span class="budget-amount" id="hourlyAmt">—</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill ok" id="hourlyBar" style="width:0%"></div></div>
+    </div>
+    <div style="margin-top:8px">
+      <div class="stat-row">
+        <span class="stat-key">All-time spend</span>
+        <span class="stat-val" id="statTotalCost">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Requests today</span>
+        <span class="stat-val" id="statTodayReqs">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Rate limit</span>
+        <span class="stat-val" id="statRateLimit">—</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-key">Users tracked</span>
+        <span class="stat-val" id="statUsers">—</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cache stats -->
+  <div class="card">
+    <div class="chart-title">Cache Performance</div>
+    <div class="g2" style="gap:8px;margin-bottom:12px">
+      <div class="mini-stat" style="background:var(--surface2);border-radius:8px">
+        <div class="mini-val col-green" id="exactHits">—</div>
+        <div class="mini-lbl">Exact Hits</div>
+      </div>
+      <div class="mini-stat" style="background:var(--surface2);border-radius:8px">
+        <div class="mini-val col-purple" id="semHits">—</div>
+        <div class="mini-lbl">Semantic Hits</div>
+      </div>
+    </div>
+    <div class="stat-row">
+      <span class="stat-key">Exact cache size</span>
+      <span class="stat-val" id="exactSize">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-key">Semantic cache size</span>
+      <span class="stat-val" id="semSize">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-key">Semantic enabled</span>
+      <span class="stat-val" id="semEnabled">—</span>
+    </div>
+    <div class="stat-row">
+      <span class="stat-key">ML router</span>
+      <span class="stat-val" id="mlStatus">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+  CHARTS
+════════════════════════════════════════════ -->
+<div class="g2 section">
+  <div class="card">
+    <div class="chart-title">Model Distribution</div>
+    <div class="chart-wrap"><canvas id="modelChart"></canvas></div>
+  </div>
+  <div class="card">
+    <div class="chart-title">Cache Breakdown</div>
+    <div class="chart-wrap"><canvas id="cacheChart"></canvas></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+  QUERY PANEL
+════════════════════════════════════════════ -->
+<div class="query-panel">
+  <div class="panel-title">🧪 Query Playground</div>
+  <div class="example-row">
+    <button class="btn-example" onclick="setExample('simple')">Simple</button>
+    <button class="btn-example" onclick="setExample('medium')">Medium</button>
+    <button class="btn-example" onclick="setExample('complex')">Complex</button>
+    <button class="btn-example" onclick="setExample('code')">Code</button>
+    <button class="btn-example" onclick="setExample('cache')">Cache Test</button>
+  </div>
+  <textarea class="query-area" id="queryBox" placeholder="Type your query here…
+Ctrl+Enter to send">What is machine learning?</textarea>
+
+  <div id="predictBox" class="predict-box">
+    <div class="predict-item"><span class="predict-val" id="pModel">—</span><span>predicted model</span></div>
+    <div class="predict-item"><span class="predict-val" id="pScore">—</span><span>complexity</span></div>
+    <div class="predict-item"><span class="predict-val" id="pCost">—</span><span>est. cost</span></div>
+  </div>
+
+  <div class="query-controls">
+    <input class="inp" id="userBox" placeholder="user_id" style="width:140px" value="prisha"/>
+    <select class="inp" id="modelBox">
+      <option value="">Auto-route</option>
+      <option value="gemini-2.0-flash">Force Flash (cheap)</option>
+      <option value="gemini-2.5-pro">Force Pro (smart)</option>
+    </select>
+    <button class="btn" id="sendBtn" onclick="sendQuery()">Send →</button>
+    <button class="btn btn-outline btn-sm" onclick="previewCost()">💡 Preview Cost</button>
+    <span class="spinner-txt" id="spinner" style="display:none"><span class="spin">⏳</span> Sending…</span>
+  </div>
+
+  <div class="response-wrap" id="responseWrap">
+    <div class="response-header">
+      <span>Response</span>
+      <span id="responseTime" style="font-variant-numeric:tabular-nums"></span>
+    </div>
+    <div class="response-body" id="responseBody"></div>
+    <div class="chip-row" id="chipRow"></div>
+  </div>
+
+  <div class="error-banner" id="errorBanner"></div>
+</div>
+
+<!-- ════════════════════════════════════════════
+  HISTORY TABLE
+════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <span class="section-title">Request History</span>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input class="inp" id="filterUser" placeholder="filter user_id" style="width:140px;font-size:12px;padding:4px 8px" oninput="loadHistory()"/>
+      <button class="btn btn-outline btn-sm" onclick="loadHistory()">↺</button>
+    </div>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time (UTC)</th>
+            <th>User</th>
+            <th>Query</th>
+            <th>Model</th>
+            <th>Complexity</th>
+            <th>Cost</th>
+            <th>Cache</th>
+            <th>Latency</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody">
+          <tr><td colspan="8" class="empty">No requests yet</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+  MODEL COMPARISON
+════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header"><span class="section-title">Model Cost Comparison</span></div>
+  <div class="card">
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <input class="inp" id="compareQuery" placeholder="Type any query to compare cost…" style="flex:1;min-width:200px"/>
+      <button class="btn btn-outline btn-sm" onclick="runCompare()">Compare →</button>
+    </div>
+    <div id="compareResult" style="color:var(--muted);font-size:13px">Enter a query above to see cost across models.</div>
+  </div>
+</div>
+
+</div><!-- /main -->
+
+<script>
+/* ════════════════════════════════════════════
+   STATE & CONSTANTS
+════════════════════════════════════════════ */
+const EXAMPLES = {
+  simple:  'What is Python?',
+  medium:  'Explain how neural networks learn. What is backpropagation and gradient descent?',
+  complex: 'Analyze the architectural trade-offs between microservices and monolithic systems in high-throughput distributed ML inference pipelines. Compare latency, scalability, fault-tolerance, and operational complexity. Provide a decision framework.',
+  code:    '```python\ndef quicksort(arr):\n    if len(arr) <= 1:\n        return arr\n    pivot = arr[0]\n    # TODO: implement partitioning\n    pass\n```\nFix this quicksort. Explain time and space complexity.',
+  cache:   'What is machine learning?',  // same as the first one to demo cache hit
+};
+
+let modelChart = null, cacheChart = null;
+let pollTimer  = null;
+let lastData   = null;
+
+/* ════════════════════════════════════════════
+   HELPERS
+════════════════════════════════════════════ */
+const api    = () => document.getElementById('apiBase').value.replace(/\/$/, '');
+const $      = id => document.getElementById(id);
+const fmt$   = v => {
+  if (v === 0)      return '$0.00';
+  if (v < 0.000001) return `$${(v*1e6).toFixed(2)}µ`;
+  if (v < 0.001)    return `$${(v*1000).toFixed(3)}m`;
+  if (v < 1)        return `$${v.toFixed(4)}`;
+  return `$${v.toFixed(2)}`;
+};
+const fmtMs  = ms => ms < 1000 ? `${Math.round(ms)}ms` : `${(ms/1000).toFixed(1)}s`;
+const fmtPct = v  => `${v.toFixed(1)}%`;
+const now    = ()  => new Date().toLocaleTimeString();
+
+function setConnected(ok, msg) {
+  $('liveDot').className = 'live-dot' + (ok ? ' pulse' : ' red');
+  $('liveStatus').textContent = ok ? msg : 'disconnected';
+}
+
+/* ════════════════════════════════════════════
+   /stats POLLING
+════════════════════════════════════════════ */
+async function doRefresh() {
+  try {
+    const res  = await fetch(`${api()}/stats`);
+    if (!res.ok) { setConnected(false, 'error'); return; }
+    const d    = await res.json();
+    lastData   = d;
+    setConnected(true, 'live');
+    renderStats(d);
+    $('refreshInfo').textContent = `Updated ${now()}`;
+  } catch {
+    setConnected(false, 'disconnected — is server running?');
+  }
+}
+
+function renderStats(d) {
+  const ec  = d.exact_cache    || {};
+  const sc  = d.semantic_cache || {};
+  const bud = d.budget         || {};
+  const rl  = d.rate_limiter   || {};
+  const ana = d.analytics      || {};
+
+  // Mock banner
+  $('mockBanner').style.display = d.mock_mode ? 'flex' : 'none';
+
+  // KPIs
+  const totalCost = bud.total_cost_usd || 0;
+  const totalReqs = bud.total_requests || 0;
+  const hitRate   = ec.hit_rate_pct    || 0;
+  const saved     = ana.cost_saved_usd || 0;
+  const dailyPct  = bud.daily_pct_used || 0;
+
+  $('kpiCost').textContent    = fmt$(totalCost);
+  $('kpiAvg').textContent     = `avg / request: ${fmt$(totalCost / Math.max(totalReqs, 1))}`;
+  $('kpiHit').textContent     = fmtPct(hitRate);
+  $('kpiSaved').textContent   = `money saved: ${fmt$(saved)}`;
+  $('kpiReqs').textContent    = totalReqs.toLocaleString();
+  $('kpiP95').textContent     = `p95 latency: ${ana.latency_p95_ms ? fmtMs(ana.latency_p95_ms) : '—'}`;
+  $('kpiBudget').textContent  = fmtPct(dailyPct);
+  $('kpiBudgetSub').textContent = `of ${fmt$(bud.daily_limit_usd || 0)} limit`;
+
+  // Budget bars
+  setBar('dailyBar',  'dailyAmt',  bud.daily_spent_usd  || 0, bud.daily_limit_usd  || 0);
+  setBar('hourlyBar', 'hourlyAmt', bud.hourly_spent_usd || 0, bud.hourly_limit_usd || 0);
+
+  // Detail stats
+  $('statTotalCost').textContent  = fmt$(totalCost);
+  $('statTodayReqs').textContent  = totalReqs.toLocaleString();
+  $('statRateLimit').textContent  = `${rl.limit_per_hour || '—'} / hr`;
+  $('statUsers').textContent      = rl.active_users || '—';
+
+  // Cache
+  $('exactHits').textContent = (ec.hits  || 0).toLocaleString();
+  $('semHits').textContent   = (sc.hits  || 0).toLocaleString();
+  $('exactSize').textContent = `${ec.size || 0} / ${ec.max_size || '—'}`;
+  $('semSize').textContent   = sc.size || 0;
+  $('semEnabled').textContent = sc.enabled ? '✅ yes' : '❌ no (install sentence-transformers)';
+  $('mlStatus').textContent   = d.ml_router?.trained ? '✅ trained (RF)' : '⏳ heuristic (POST /train)';
+
+  // Charts
+  buildModelChart(ana.model_breakdown || {});
+  buildCacheChart(ec, sc);
+}
+
+function setBar(barId, amtId, spent, limit) {
+  const pct  = limit > 0 ? Math.min(spent / limit * 100, 100) : 0;
+  const fill = $(barId);
+  fill.style.width  = pct + '%';
+  fill.className    = 'bar-fill ' + (pct >= 95 ? 'danger' : pct >= 75 ? 'warn' : 'ok');
+  $(amtId).textContent = `${fmt$(spent)} / ${fmt$(limit)} (${fmtPct(pct)})`;
+}
+
+/* ════════════════════════════════════════════
+   CHARTS
+════════════════════════════════════════════ */
+const CHART_COLORS = ['#58a6ff','#bc8cff','#3fb950','#d29922','#f0883e','#f85149'];
+const CHART_OPTS   = {
+  plugins:{ legend:{ labels:{ color:'#8b949e', font:{ size:12 }, padding:12 }, position:'right' } },
+  maintainAspectRatio: false,
+};
+
+function buildModelChart(breakdown) {
+  const labels  = Object.keys(breakdown);
+  const data    = labels.map(m => breakdown[m].requests || 0);
+  const colored = CHART_COLORS.slice(0, labels.length);
+  if (modelChart) modelChart.destroy();
+  modelChart = new Chart($('modelChart'), {
+    type: 'doughnut',
+    data: { labels: labels.map(m => m.replace('gemini-','')), datasets:[{ data, backgroundColor: colored, borderWidth:0, hoverOffset:4 }] },
+    options: { ...CHART_OPTS, cutout:'62%' },
+  });
+}
+
+function buildCacheChart(ec, sc) {
+  const misses  = ec.misses || 0;
+  const exact   = ec.hits   || 0;
+  const sem     = sc.hits   || 0;
+  if (cacheChart) cacheChart.destroy();
+  cacheChart = new Chart($('cacheChart'), {
+    type: 'bar',
+    data: {
+      labels: ['Exact Hit','Semantic Hit','Miss'],
+      datasets:[{
+        data: [exact, sem, misses],
+        backgroundColor: ['#3fb950','#bc8cff','#6e7681'],
+        borderRadius: 5, borderWidth: 0,
+      }],
+    },
+    options:{
+      maintainAspectRatio: false,
+      plugins:{ legend:{ display:false } },
+      scales:{
+        x:{ ticks:{ color:'#8b949e' }, grid:{ color:'rgba(255,255,255,.04)' } },
+        y:{ ticks:{ color:'#8b949e' }, grid:{ color:'rgba(255,255,255,.04)' }, beginAtZero:true },
+      },
+    },
+  });
+}
+
+/* ════════════════════════════════════════════
+   /history
+════════════════════════════════════════════ */
+async function loadHistory() {
+  const filter = $('filterUser').value.trim();
+  const url    = `${api()}/history?limit=30` + (filter ? `&user_id=${encodeURIComponent(filter)}` : '');
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+    renderHistory(data.requests || []);
+  } catch {}
+}
+
+function renderHistory(rows) {
+  const tbody = $('historyBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" class="empty">No requests yet — send a query above!</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const model   = (r.model_used || '').replace('gemini-','');
+    const isCache = r.cache_hit === 'True' || r.cache_hit === true;
+    const ctype   = r.cache_type || 'none';
+    const cLabel  = isCache ? `💾 ${ctype}` : '—';
+    const cCls    = isCache ? 'chip green' : 'chip';
+    const mCls    = model.includes('pro') ? 'chip purple' : 'chip blue';
+    const score   = parseFloat(r.complexity_score) || 0;
+    const scoreBar= `<div style="background:var(--surface3);border-radius:3px;height:4px;width:60px;display:inline-block;vertical-align:middle;margin-left:4px"><div style="background:${score > .65 ? 'var(--orange)' : score > .35 ? 'var(--yellow)' : 'var(--green)'};width:${Math.round(score*100)}%;height:100%;border-radius:3px"></div></div>`;
+    return `<tr>
+      <td class="mono col-muted">${(r.timestamp||'').slice(11,19)}</td>
+      <td><span class="chip">${r.user_id||'—'}</span></td>
+      <td class="wrap" title="${r.query_preview}">${r.query_preview||''}</td>
+      <td><span class="${mCls}">${model}</span></td>
+      <td><span class="mono">${Math.round(score*100)}%</span>${scoreBar}</td>
+      <td class="mono">${fmt$(parseFloat(r.cost_usd)||0)}</td>
+      <td><span class="${cCls}">${cLabel}</span></td>
+      <td class="mono">${fmtMs(parseFloat(r.latency_ms)||0)}</td>
+    </tr>`;
+  }).join('');
+}
+
+/* ════════════════════════════════════════════
+   QUERY PANEL
+════════════════════════════════════════════ */
+function setExample(key) {
+  $('queryBox').value = EXAMPLES[key];
+  $('predictBox').style.display = 'none';
+}
+
+async function previewCost() {
+  const q = $('queryBox').value.trim();
+  if (!q) return;
+  try {
+    const res  = await fetch(`${api()}/predict?query=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    $('pModel').textContent = (data.predicted_model || '').replace('gemini-','');
+    $('pScore').textContent = fmtPct((data.complexity_score||0)*100);
+    $('pCost').textContent  = fmt$(data.estimated_cost_usd || 0);
+    $('predictBox').style.display = 'flex';
+  } catch {}
+}
+
+async function sendQuery() {
+  const query   = $('queryBox').value.trim();
+  const user_id = $('userBox').value.trim() || 'dashboard';
+  const force   = $('modelBox').value || null;
+  if (!query) return;
+
+  // UI state: loading
+  $('sendBtn').disabled       = true;
+  $('spinner').style.display  = 'flex';
+  $('responseWrap').style.display = 'none';
+  $('errorBanner').style.display  = 'none';
+
+  const t0 = performance.now();
+  try {
+    const res  = await fetch(`${api()}/chat`, {
+      method:  'POST',
+      headers: { 'Content-Type':'application/json' },
+      body:    JSON.stringify({ query, user_id, force_model: force }),
+    });
+    const data = await res.json();
+    const ms   = performance.now() - t0;
+
+    if (!res.ok) {
+      const detail = data.detail || data;
+      showError(`${res.status} — ${detail.message || detail.error || JSON.stringify(detail)}`);
+      return;
+    }
+
+    // Render response
+    $('responseBody').textContent = data.response;
+    $('responseTime').textContent = fmtMs(ms) + ' round-trip';
+    $('responseWrap').style.display = 'block';
+
+    // Chips
+    const isMock  = (data.response||'').includes('[MOCK');
+    const isApiErr= (data.response||'').includes('[API_ERROR');
+    const model   = (data.model||'').replace('gemini-','');
+    $('chipRow').innerHTML = [
+      `<span class="chip ${model.includes('pro')?'purple':'blue'}">Model: ${model}</span>`,
+      data.cache_hit
+        ? `<span class="chip green">💾 Cache HIT (${data.cache_type})</span>`
+        : `<span class="chip">Cache MISS</span>`,
+      `<span class="chip">Cost: ${fmt$(data.cost_usd||0)}</span>`,
+      `<span class="chip yellow">Complexity: ${Math.round((data.complexity_score||0)*100)}%</span>`,
+      `<span class="chip">${fmtMs(data.latency_ms||0)}</span>`,
+      isMock  ? `<span class="chip orange">⚠ MOCK — set MOCK_MODE=false for real answers</span>` : '',
+      isApiErr? `<span class="chip red">API error — check model name / key</span>` : '',
+    ].filter(Boolean).join('');
+
+    // Refresh data
+    doRefresh();
+    loadHistory();
+  } catch (e) {
+    showError('Could not reach API. Is the server running at ' + api() + '?');
+  } finally {
+    $('sendBtn').disabled      = false;
+    $('spinner').style.display = 'none';
+  }
+}
+
+function showError(msg) {
+  $('errorBanner').textContent   = msg;
+  $('errorBanner').style.display = 'block';
+}
+
+/* ════════════════════════════════════════════
+   COMPARE
+════════════════════════════════════════════ */
+async function runCompare() {
+  const q = $('compareQuery').value.trim();
+  if (!q) return;
+  try {
+    const res  = await fetch(`${api()}/compare?query=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    const models = data.models || {};
+    const entries = Object.entries(models).sort((a,b) => a[1].estimated_cost_usd - b[1].estimated_cost_usd);
+    const maxCost = Math.max(...entries.map(e => e[1].estimated_cost_usd));
+
+    $('compareResult').innerHTML = `
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">
+        Complexity: <strong>${fmtPct((data.query_complexity||0)*100)}</strong> &nbsp;|&nbsp;
+        Cheapest: <strong style="color:var(--green)">${entries[0]?.[0].replace('gemini-','')}</strong>
+      </div>
+      ${entries.map(([model, info]) => {
+        const pct   = maxCost > 0 ? info.estimated_cost_usd / maxCost * 100 : 0;
+        const mname = model.replace('gemini-','');
+        const isPro = model.includes('pro');
+        return `<div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:13px">
+            <span class="${isPro?'col-purple':'col-blue'}" style="font-weight:600">${mname}</span>
+            <span class="mono">${fmt$(info.estimated_cost_usd)}</span>
+          </div>
+          <div class="bar-track" style="height:8px">
+            <div class="bar-fill ok" style="width:${Math.max(pct,2)}%;background:${isPro?'var(--purple)':'var(--blue)'}"></div>
+          </div>
+        </div>`;
+      }).join('')}
+    `;
+  } catch (e) {
+    $('compareResult').innerHTML = `<span style="color:var(--red)">Error: ${e.message}</span>`;
+  }
+}
+
+/* ════════════════════════════════════════════
+   CACHE CLEAR
+════════════════════════════════════════════ */
+async function clearCaches() {
+  if (!confirm('Clear both caches? All cached responses will be lost.')) return;
+  try {
+    await fetch(`${api()}/cache`, { method: 'DELETE' });
+    doRefresh(); loadHistory();
+    alert('Caches cleared!');
+  } catch { alert('Could not reach API'); }
+}
+
+/* ════════════════════════════════════════════
+   INIT
+════════════════════════════════════════════ */
+// Ctrl+Enter to send
+$('queryBox').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendQuery();
+});
+
+// Live preview cost as user types
+let predictDebounce;
+$('queryBox').addEventListener('input', () => {
+  clearTimeout(predictDebounce);
+  predictDebounce = setTimeout(() => {
+    if ($('queryBox').value.trim().length > 5) previewCost();
+  }, 800);
+});
+
+// Initial load
+doRefresh();
+loadHistory();
+
+// Poll every 8 seconds
+pollTimer = setInterval(() => { doRefresh(); loadHistory(); }, 8000);
+</script>
+</body>
 </html>
