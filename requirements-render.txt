@@ -1,0 +1,15 @@
+# Render free tier = 512MB RAM
+# sentence-transformers = 400MB+ → crashes free tier build
+# So semantic cache runs in exact-match-only mode on free tier
+# Everything else works 100%
+
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
+python-dotenv==1.0.0
+google-genai>=0.8.0
+scikit-learn==1.3.2
+numpy==1.24.3
+pandas==2.1.3
+python-multipart==0.0.6
+joblib==1.3.2

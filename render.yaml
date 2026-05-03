@@ -1,0 +1,31 @@
+# render.yaml - Render deployment configuration
+# This file tells Render how to build and run your app
+
+services:
+  - type: web
+    name: llm-cost-firewall
+    runtime: python
+    buildCommand: pip install -r requirements-render.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MOCK_MODE
+        value: "false"
+      - key: GEMINI_API_KEY
+        sync: false        # you'll fill this in Render's dashboard manually
+      - key: DAILY_BUDGET_USD
+        value: "2.0"
+      - key: HOURLY_BUDGET_USD
+        value: "0.50"
+      - key: RATE_LIMIT_PER_HOUR
+        value: "100"
+      - key: CACHE_TTL_SECONDS
+        value: "3600"
+      - key: SEMANTIC_THRESHOLD
+        value: "0.85"
+      - key: MAX_RETRIES
+        value: "3"
+      - key: RETRY_BASE_DELAY
+        value: "2.0"
+      - key: LOG_FILE
+        value: "logs/requests.csv"
+    healthCheckPath: /health

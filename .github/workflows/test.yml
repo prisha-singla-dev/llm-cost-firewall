@@ -32,7 +32,8 @@ jobs:
     - name: Install dependencies
       run: |
         pip install fastapi uvicorn pydantic python-dotenv \
-                    scikit-learn numpy pandas pytest python-multipart
+                    google-genai scikit-learn numpy pandas \
+                    pytest python-multipart joblib
 
     - name: Run tests
       env:
@@ -40,5 +41,6 @@ jobs:
         DAILY_BUDGET_USD: "100"
         HOURLY_BUDGET_USD: "10"
         RATE_LIMIT_PER_HOUR: "1000"
+        GEMINI_API_KEY: "fake-key-for-tests"
       run: |
         python -m pytest tests/ -v --tb=short
