@@ -276,6 +276,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="live-dot" id="liveDot"></div>
       <span id="liveStatus">connecting...</span>
     </div>
+    <div class="pill" id="modelPill" style="display:none">
+      <span style="color:var(--muted);font-size:11px">model:</span>
+      <span id="currentModel" style="color:var(--blue);font-weight:600">—</span>
+    </div>
     <span class="tag">v2.0</span>
   </div>
 </header>
@@ -479,7 +483,7 @@ Ctrl+Enter to send">What is machine learning?</textarea>
       <table>
         <thead>
           <tr>
-            <th>Time (UTC)</th>
+            <th>Time (IST)</th>
             <th>User</th>
             <th>Query</th>
             <th>Model</th>
@@ -517,6 +521,18 @@ Ctrl+Enter to send">What is machine learning?</textarea>
 /* ════════════════════════════════════════════
    STATE & CONSTANTS
 ════════════════════════════════════════════ */
+// Convert UTC ISO string → IST time string
+function toIST(utcStr) {
+  if (!utcStr) return '—';
+  try {
+    const d = new Date(utcStr.endsWith('Z') ? utcStr : utcStr + 'Z');
+    return d.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+  } catch { return utcStr.slice(11,19); }
+}
+
 const EXAMPLES = {
   simple:  'What is Python?',
   medium:  'Explain how neural networks learn. What is backpropagation and gradient descent?',
@@ -576,6 +592,10 @@ function renderStats(d) {
 
   // Mock banner
   $('mockBanner').style.display = d.mock_mode ? 'flex' : 'none';
+  if (d.current_model) {
+    $('currentModel').textContent = d.current_model.replace('gemini-','');
+    $('modelPill').style.display = 'flex';
+  }
 
   // KPIs
   const totalCost = bud.total_cost_usd || 0;
@@ -700,7 +720,7 @@ function renderHistory(rows) {
     const score   = parseFloat(r.complexity_score) || 0;
     const scoreBar= `<div style="background:var(--surface3);border-radius:3px;height:4px;width:60px;display:inline-block;vertical-align:middle;margin-left:4px"><div style="background:${score > .65 ? 'var(--orange)' : score > .35 ? 'var(--yellow)' : 'var(--green)'};width:${Math.round(score*100)}%;height:100%;border-radius:3px"></div></div>`;
     return `<tr>
-      <td class="mono col-muted">${(r.timestamp||'').slice(11,19)}</td>
+      <td class="mono col-muted" title="${r.timestamp||''}">${toIST(r.timestamp||'')}</td>
       <td><span class="chip">${r.user_id||'—'}</span></td>
       <td class="wrap" title="${r.query_preview}">${r.query_preview||''}</td>
       <td><span class="${mCls}">${model}</span></td>
@@ -763,7 +783,8 @@ async function sendQuery() {
 
     // Render response
     $('responseBody').textContent = data.response;
-    $('responseTime').textContent = fmtMs(ms) + ' round-trip';
+    const istNow = new Date().toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+    $('responseTime').textContent = fmtMs(ms) + ` round-trip  ·  ${istNow} IST`;
     $('responseWrap').style.display = 'block';
 
     // Chips
@@ -778,8 +799,10 @@ async function sendQuery() {
       `<span class="chip">Cost: ${fmt$(data.cost_usd||0)}</span>`,
       `<span class="chip yellow">Complexity: ${Math.round((data.complexity_score||0)*100)}%</span>`,
       `<span class="chip">${fmtMs(data.latency_ms||0)}</span>`,
-      isMock  ? `<span class="chip orange">⚠ MOCK — set MOCK_MODE=false for real answers</span>` : '',
-      isApiErr? `<span class="chip red">API error — check model name / key</span>` : '',
+      isMock  ? `<span class="chip orange">⚠ MOCK MODE — set MOCK_MODE=false in .env for real answers</span>` : '',
+      data.error_type === 'quota_exceeded'
+        ? `<span class="chip red">⛔ Quota exceeded — wait 60s or add billing at aistudio.google.com</span>`
+        : (data.error ? `<span class="chip red">⚠ API error</span>` : ''),
     ].filter(Boolean).join('');
 
     // Refresh data
