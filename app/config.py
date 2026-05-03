@@ -1,37 +1,41 @@
 """
-config.py - All configuration in one place
+config.py
 
-MODEL NAMES (updated May 2025):
-  google-generativeai (old SDK) is DEPRECATED as of Nov 2025.
-  We now use google-genai (new SDK) with current model names.
+IMPORTANT MODEL UPDATE (May 2026):
+  gemini-2.0-flash  → shutting down June 1 2026. Replaced by gemini-2.5-flash.
+  gemini-2.5-flash  → best free tier limits (15 RPM, ~500 RPD on free tier)
+  gemini-2.5-pro    → for complex queries (5 RPM free tier, use sparingly)
 
-  gemini-2.0-flash  = fast + cheap  → simple queries
-  gemini-2.5-pro    = powerful       → complex queries
+FREE TIER LIMITS (per project, as of 2025-2026):
+  gemini-2.5-flash: 15 RPM, ~500 RPD → use this as your default
+  gemini-2.5-pro:   5 RPM,  50 RPD   → only for truly complex queries
 
-COST (approximate, Google AI Studio free tier has generous limits):
-  gemini-2.0-flash: ~$0.075 / 1M input tokens  (essentially free for dev)
-  gemini-2.5-pro:   ~$1.25  / 1M input tokens
+HOW TO GET MORE QUOTA (free):
+  Add a credit card at aistudio.google.com → billing enabled = Tier 1
+  Tier 1 gives you 150 RPM for Flash, unlimited daily requests.
+  You won't be charged unless you exceed very high thresholds.
 """
 import os
 from dotenv import load_dotenv
 load_dotenv()
 
-# ── Current Gemini model names (2025) ─────────────────────────────────────────
-GEMINI_FLASH = "gemini-2.0-flash"   # fast, cheap, free tier
-GEMINI_PRO   = "gemini-2.5-pro"     # smart, costs more
+# ── Current model names (updated for June 2026 deprecations) ──────────────────
+GEMINI_FLASH = "gemini-2.5-flash"   # fast, cheap, best free quota
+GEMINI_PRO   = "gemini-2.5-pro"     # powerful, use sparingly on free tier
 
-# ── Cost per 1K tokens (USD) ──────────────────────────────────────────────────
+# ── Cost per 1M tokens (USD) — converted to per 1K for calculation ───────────
 MODEL_COSTS = {
-    "gemini-2.0-flash": {"input": 0.000075,  "output": 0.0003},
-    "gemini-2.5-pro":   {"input": 0.00125,   "output": 0.005},
-    # Keep old names as aliases so existing logs don't break
-    "gemini-1.5-flash": {"input": 0.000075,  "output": 0.0003},
-    "gemini-1.5-pro":   {"input": 0.00125,   "output": 0.005},
+    "gemini-2.5-flash": {"input": 0.0003,  "output": 0.0024},   # $0.30/1M in
+    "gemini-2.5-pro":   {"input": 0.00125, "output": 0.005},    # $1.25/1M in
+    # Backwards compat for existing log entries
+    "gemini-2.0-flash": {"input": 0.0001,  "output": 0.0004},
+    "gemini-1.5-flash": {"input": 0.000075,"output": 0.0003},
+    "gemini-1.5-pro":   {"input": 0.00125, "output": 0.005},
 }
 
 # ── Routing thresholds ────────────────────────────────────────────────────────
-SIMPLE_THRESHOLD  = 0.35
-COMPLEX_THRESHOLD = 0.65
+SIMPLE_THRESHOLD  = 0.35   # below → use Flash (cheap)
+COMPLEX_THRESHOLD = 0.65   # above → use Pro (smart, use sparingly on free tier)
 
 # ── Cache ─────────────────────────────────────────────────────────────────────
 CACHE_TTL_SECONDS             = int(os.getenv("CACHE_TTL_SECONDS", "3600"))
@@ -45,11 +49,11 @@ RATE_LIMIT_PER_HOUR = int(os.getenv("RATE_LIMIT_PER_HOUR", "100"))
 DAILY_BUDGET_USD  = float(os.getenv("DAILY_BUDGET_USD",  "10.0"))
 HOURLY_BUDGET_USD = float(os.getenv("HOURLY_BUDGET_USD", "2.0"))
 
-# ── API key ───────────────────────────────────────────────────────────────────
+# ── API ───────────────────────────────────────────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+MOCK_MODE      = os.getenv("MOCK_MODE", "true").lower() == "true"
+LOG_FILE       = os.getenv("LOG_FILE", "logs/requests.csv")
 
-# ── Mode ──────────────────────────────────────────────────────────────────────
-MOCK_MODE = os.getenv("MOCK_MODE", "true").lower() == "true"
-
-# ── Logging ───────────────────────────────────────────────────────────────────
-LOG_FILE = os.getenv("LOG_FILE", "logs/requests.csv")
+# ── Retry settings for 429 handling ──────────────────────────────────────────
+MAX_RETRIES       = int(os.getenv("MAX_RETRIES", "3"))
+RETRY_BASE_DELAY  = float(os.getenv("RETRY_BASE_DELAY", "2.0"))  # seconds

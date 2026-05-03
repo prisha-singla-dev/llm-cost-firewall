@@ -1,44 +1,54 @@
 """
 router.py - Main LLM Router
 
-Uses the NEW google-genai SDK (not deprecated google-generativeai).
-New SDK pattern: client = genai.Client() then client.models.generate_content()
+KEY CHANGE: Added exponential backoff retry for 429 (quota exceeded) errors.
+When Gemini returns 429, we wait and retry up to MAX_RETRIES times.
+If all retries fail, we return a graceful fallback (not a crash).
+
+WHY EXPONENTIAL BACKOFF:
+  Google's quota operates on a rolling 60-second window.
+  Waiting 2s, then 4s, then 8s gives the window time to refill.
+  This is the standard pattern for handling rate limits with any API.
+
+CURRENT MODEL:
+  Using gemini-2.5-flash — best free tier quota, won't be deprecated.
+  (gemini-2.0-flash shuts down June 1 2026)
 """
 
 import time
 import random
-import os
+import asyncio
 from typing import Dict, Any, Optional
 
-from app.analyzer      import compute_complexity, select_model
-from app.cache         import ExactCache
+from app.analyzer       import compute_complexity, select_model
+from app.cache          import ExactCache
 from app.semantic_cache import SemanticCache
-from app.budget        import BudgetEnforcer, BudgetExceededError
-from app.rate_limiter  import RateLimiter
-from app.logger        import RequestLogger
-from app.config        import (
+from app.budget         import BudgetEnforcer, BudgetExceededError
+from app.rate_limiter   import RateLimiter
+from app.logger         import RequestLogger
+from app.config         import (
     GEMINI_API_KEY, MOCK_MODE, MODEL_COSTS,
     GEMINI_FLASH, GEMINI_PRO,
+    MAX_RETRIES, RETRY_BASE_DELAY,
 )
 
-# ── New SDK import ────────────────────────────────────────────────────────────
-_gemini_client = None
+# ── New google-genai SDK ──────────────────────────────────────────────────────
+_gemini_client   = None
 GEMINI_AVAILABLE = False
 
 if not MOCK_MODE and GEMINI_API_KEY:
     try:
         from google import genai as _genai_module
-        _gemini_client = _genai_module.Client(api_key=GEMINI_API_KEY)
+        _gemini_client   = _genai_module.Client(api_key=GEMINI_API_KEY)
         GEMINI_AVAILABLE = True
-        print(f"✅ Gemini client initialized (new google-genai SDK)")
+        print(f"✅ Gemini client ready | model={GEMINI_FLASH}")
     except Exception as e:
-        print(f"⚠️  Gemini init failed: {e} — falling back to mock mode")
+        print(f"⚠️  Gemini init failed: {e}")
 
 MOCK_RESPONSES = [
-    "This is a detailed mock response demonstrating the system works correctly.",
-    "Based on your query, here is a comprehensive answer covering all key aspects.",
-    "Great question! Here is a structured response with the key information you need.",
-    "The answer involves several important concepts. Let me break them down clearly.",
+    "This is a mock response. Set MOCK_MODE=false and add GEMINI_API_KEY to get real answers.",
+    "Mock mode is active. The routing, caching, and cost tracking are all real — only the LLM call is fake.",
+    "To get real Gemini responses: set MOCK_MODE=false in your .env file and restart the server.",
 ]
 
 
@@ -59,31 +69,58 @@ class LLMRouter:
     def load_ml_router(self, ml_router):
         self._ml_router = ml_router
 
-    def _call_gemini(self, query: str, model: str) -> Dict:
+    def _call_gemini_with_retry(self, query: str, model: str) -> Dict:
         """
-        Call Gemini using the NEW google-genai SDK.
-        Pattern: client.models.generate_content(model=..., contents=...)
+        Call Gemini API with exponential backoff retry on 429.
+        
+        Retry schedule:
+          Attempt 1 → immediate
+          Attempt 2 → wait 2s
+          Attempt 3 → wait 4s
+          All fail  → raise last exception
         """
-        response = _gemini_client.models.generate_content(
-            model=model,
-            contents=query,
-        )
-        text = response.text
+        last_exception = None
 
-        # Token counts from usage_metadata
-        usage      = getattr(response, "usage_metadata", None)
-        tokens_in  = getattr(usage, "prompt_token_count",      50) if usage else 50
-        tokens_out = getattr(usage, "candidates_token_count",  80) if usage else 80
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = _gemini_client.models.generate_content(
+                    model=model,
+                    contents=query,
+                )
+                text = response.text
 
-        return {"response": text, "tokens_in": tokens_in, "tokens_out": tokens_out}
+                usage      = getattr(response, "usage_metadata", None)
+                tokens_in  = getattr(usage, "prompt_token_count",     50) if usage else 50
+                tokens_out = getattr(usage, "candidates_token_count", 80) if usage else 80
+
+                return {"response": text, "tokens_in": tokens_in, "tokens_out": tokens_out}
+
+            except Exception as e:
+                last_exception = e
+                err_str = str(e)
+
+                # 429 = quota exceeded → retry with backoff
+                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "quota" in err_str.lower():
+                    if attempt < MAX_RETRIES - 1:
+                        delay = RETRY_BASE_DELAY * (2 ** attempt)
+                        print(f"⏳ Gemini 429 on attempt {attempt+1}/{MAX_RETRIES} — waiting {delay}s before retry")
+                        time.sleep(delay)
+                        continue
+
+                # Non-429 error or final retry → break immediately
+                break
+
+        raise last_exception
 
     def _mock_call(self, query: str, model: str) -> Dict:
-        """Fake call for testing — realistic latency, correct cost calculation."""
-        time.sleep(random.uniform(0.05, 0.15))
+        time.sleep(random.uniform(0.05, 0.12))
         tokens_in  = max(10, len(query.split()) + 5)
-        tokens_out = random.randint(60, 180)
-        response   = f"[MOCK {model}] {random.choice(MOCK_RESPONSES)} | Query: '{query[:50]}'"
-        return {"response": response, "tokens_in": tokens_in, "tokens_out": tokens_out}
+        tokens_out = random.randint(60, 160)
+        return {
+            "response": random.choice(MOCK_RESPONSES),
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+        }
 
     def process(
         self,
@@ -104,7 +141,7 @@ class LLMRouter:
         # 2. Budget check
         self.budget.check_budget()
 
-        # 3. Complexity analysis + model selection
+        # 3. Complexity + model selection
         complexity_result = compute_complexity(query)
         complexity_score  = complexity_result["composite"]
 
@@ -116,7 +153,7 @@ class LLMRouter:
         else:
             model = select_model(complexity_score)
 
-        # 4. Exact cache check
+        # 4. Exact cache
         cached = self.exact_cache.get(query, model)
         if cached:
             latency_ms = (time.time() - start_time) * 1000
@@ -132,37 +169,66 @@ class LLMRouter:
                 "latency_ms":        round(latency_ms, 2),
             }
 
-        # 5. Semantic cache check
+        # 5. Semantic cache
         sem_cached = self.semantic_cache.get(query)
         if sem_cached:
             latency_ms = (time.time() - start_time) * 1000
             self.logger.log(user_id, query, sem_cached["model"], complexity_score, 0, 0, 0.0, True, "semantic", latency_ms)
             return {
-                "response":           sem_cached["response"],
-                "model":              sem_cached["model"],
-                "cost_usd":           0.0,
-                "cache_hit":          True,
-                "cache_type":         "semantic",
-                "similarity_score":   sem_cached.get("similarity_score"),
-                "complexity_score":   complexity_score,
-                "tokens":             {"input": 0, "output": 0},
-                "latency_ms":         round(latency_ms, 2),
+                "response":          sem_cached["response"],
+                "model":             sem_cached["model"],
+                "cost_usd":          0.0,
+                "cache_hit":         True,
+                "cache_type":        "semantic",
+                "similarity_score":  sem_cached.get("similarity_score"),
+                "complexity_score":  complexity_score,
+                "tokens":            {"input": 0, "output": 0},
+                "latency_ms":        round(latency_ms, 2),
             }
 
-        # 6. LLM call
+        # 6. LLM call with retry
+        api_error = None
         try:
             if GEMINI_AVAILABLE:
-                llm_result = self._call_gemini(query, model)
+                llm_result = self._call_gemini_with_retry(query, model)
             else:
                 llm_result = self._mock_call(query, model)
+
         except Exception as e:
-            # Fallback to mock on any API error — app never returns 500
-            llm_result = self._mock_call(query, model)
-            llm_result["response"] += f" [API_ERROR: {str(e)[:100]}]"
+            api_error  = str(e)
+            err_str    = str(e)
+
+            # Classify the error for a clean user-facing message
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                user_msg = (
+                    "Gemini free tier quota exceeded. "
+                    "Wait a minute and retry, or add billing at aistudio.google.com for higher limits."
+                )
+            elif "API_KEY" in err_str or "401" in err_str:
+                user_msg = "Invalid Gemini API key. Check your GEMINI_API_KEY in .env"
+            elif "404" in err_str:
+                user_msg = f"Model not found: {model}. Check config.py for correct model names."
+            else:
+                user_msg = f"Gemini API error: {err_str[:120]}"
+
+            # Return a clean error response — never crash the app
+            latency_ms = (time.time() - start_time) * 1000
+            return {
+                "response":          user_msg,
+                "model":             model,
+                "cost_usd":          0.0,
+                "cache_hit":         False,
+                "cache_type":        "none",
+                "complexity_score":  complexity_score,
+                "tokens":            {"input": 0, "output": 0},
+                "latency_ms":        round(latency_ms, 2),
+                "error":             True,
+                "error_type":        "quota_exceeded" if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str else "api_error",
+            }
 
         cost = _calculate_cost(model, llm_result["tokens_in"], llm_result["tokens_out"])
 
-        # 7. Record cost, cache, log
+        # 7. Record + cache + log
         self.budget.record_cost(cost)
         self.exact_cache.set(query, model, llm_result["response"], cost)
         self.semantic_cache.set(query, llm_result["response"], model, cost)
@@ -190,15 +256,16 @@ class LLMRouter:
         from app.analytics import compute_analytics
         from app.config    import LOG_FILE
         return {
-            "exact_cache":    self.exact_cache.stats(),
-            "semantic_cache": self.semantic_cache.stats(),
-            "budget":         self.budget.status(),
-            "rate_limiter":   self.rate_limiter.stats(),
-            "analytics":      compute_analytics(LOG_FILE),
-            "ml_router": {
+            "exact_cache":      self.exact_cache.stats(),
+            "semantic_cache":   self.semantic_cache.stats(),
+            "budget":           self.budget.status(),
+            "rate_limiter":     self.rate_limiter.stats(),
+            "analytics":        compute_analytics(LOG_FILE),
+            "ml_router":        {
                 "trained":    self._ml_router.is_trained if self._ml_router else False,
                 "model_type": "RandomForest" if (self._ml_router and self._ml_router.is_trained) else "heuristic",
             },
             "gemini_available": GEMINI_AVAILABLE,
             "mock_mode":        MOCK_MODE,
+            "current_model":    GEMINI_FLASH,
         }
