@@ -5,13 +5,16 @@ services:
   - type: web
     name: llm-cost-firewall
     runtime: python
+    region: singapore
+    plan: free
     buildCommand: pip install -r requirements-render.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
       - key: MOCK_MODE
         value: "false"
-      - key: GEMINI_API_KEY
-        sync: false        # you'll fill this in Render's dashboard manually
       - key: DAILY_BUDGET_USD
         value: "2.0"
       - key: HOURLY_BUDGET_USD
@@ -28,4 +31,5 @@ services:
         value: "2.0"
       - key: LOG_FILE
         value: "logs/requests.csv"
-    healthCheckPath: /health
+      - key: GEMINI_API_KEY
+        sync: false
