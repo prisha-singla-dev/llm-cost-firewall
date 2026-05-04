@@ -4,9 +4,7 @@ pydantic==2.9.2
 python-dotenv==1.0.1
 google-genai>=0.8.0
 scikit-learn==1.5.2
-sentence-transformers==2.2.2
 numpy==1.26.4
 pandas==2.2.3
 python-multipart==0.0.12
 joblib==1.4.2
-pytest==7.4.3
