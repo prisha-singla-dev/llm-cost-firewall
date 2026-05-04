@@ -1,3 +1,5 @@
+[![Tests](https://github.com/prisha-singla-dev/llm-cost-firewall/actions/workflows/test.yml/badge.svg)](https://github.com/prisha-singla-dev/llm-cost-firewall/actions)
+
 # 🔥 LLM Cost Firewall
 
 **Stop your LLM bills from exploding.** An intelligent proxy that cuts OpenAI/Anthropic API costs by 60% through smart routing, caching, and budget controls.
