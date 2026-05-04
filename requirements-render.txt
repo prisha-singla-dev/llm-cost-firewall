@@ -1,15 +1,12 @@
-# Render free tier = 512MB RAM
-# sentence-transformers = 400MB+ → crashes free tier build
-# So semantic cache runs in exact-match-only mode on free tier
-# Everything else works 100%
-# Versions chosen to have pre-built wheels for Python 3.12 — no compilation needed
-
+fastapi==0.115.0
 uvicorn[standard]==0.32.0
 pydantic==2.9.2
 python-dotenv==1.0.1
 google-genai>=0.8.0
 scikit-learn==1.5.2
+sentence-transformers==2.2.2
 numpy==1.26.4
 pandas==2.2.3
 python-multipart==0.0.12
 joblib==1.4.2
+pytest==7.4.3
