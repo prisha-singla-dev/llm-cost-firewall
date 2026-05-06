@@ -7,7 +7,7 @@
 
 An intelligent LLM proxy that cuts Gemini API costs by **60%** through smart routing, dual-layer semantic caching, budget enforcement, and rate limiting.
 
-**Live API:** `https://your-service.onrender.com/docs`  
+**Live API:** `https://llm-cost-firewall.onrender.com/docs`  
 **Tech:** Python · FastAPI · Gemini API · scikit-learn · sentence-transformers · GitHub Actions
 
 ---
