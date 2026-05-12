@@ -1,6 +1,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.32.0
 pydantic==2.9.2
+pydantic-core==2.23.4
 python-dotenv==1.0.1
 google-genai>=0.8.0
 scikit-learn==1.5.2

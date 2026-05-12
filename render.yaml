@@ -1,18 +1,15 @@
-# render.yaml - Render deployment configuration
-# This file tells Render how to build and run your app
-
 services:
   - type: web
     name: llm-cost-firewall
     runtime: python
-    region: singapore
+    region: oregon
     plan: free
-    buildCommand: pip install -r requirements-render.txt
+    buildCommand: pip install --only-binary=:all: -r requirements-render.txt || pip install -r requirements-render.txt
     startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.3
+        value: "3.12.3"
       - key: MOCK_MODE
         value: "false"
       - key: DAILY_BUDGET_USD
