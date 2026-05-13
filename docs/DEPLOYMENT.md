@@ -29,7 +29,7 @@ How to deploy LLM Cost Firewall to production.
 
 5. **Deploy!** (takes ~5 minutes)
 
-**Your app will be at:** `https://llm-cost-firewall.onrender.com`
+**Your app will be at:** `https://llm-cost-firewall-1.onrender.com`
 
 **Free Tier Limits:**
 - ✅ 750 hours/month free
